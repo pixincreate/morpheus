@@ -1,0 +1,10 @@
+# The patched smali is decompiled bytecode: its identifiers are machine generated and
+# carry no meaning to a spell checker. Everything else is ours and is checked.
+[files]
+extend-exclude = [
+  "patches/src/main/resources/**",
+  ".keywatch-baseline.json",
+  "base/**",
+  "build/**",
+  "out/**",
+]

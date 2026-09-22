@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+  companion:
+    name: Companion sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the companion with the newest installed platform
+        run: |
+          set -euo pipefail
+          ANDROID_JAR=$(ls -1 "$ANDROID_HOME"/platforms/*/android.jar | sort -V | tail -1)
+          echo "using $ANDROID_JAR"
+          mkdir -p /tmp/classes
+          javac -encoding UTF-8 -source 11 -target 11 -nowarn \
+            -classpath "$ANDROID_JAR" \
+            -d /tmp/classes \
+            companion/src/app/morphe/ather/*.java \
+            companion/stub/com/ather/maps/a0.java
+      - name: Package the companion with d8
+        run: |
+          set -euo pipefail
+          ANDROID_JAR=$(ls -1 "$ANDROID_HOME"/platforms/*/android.jar | sort -V | tail -1)
+          D8=$(ls -1 "$ANDROID_HOME"/build-tools/*/d8 | sort -V | tail -1)
+          echo "using $D8"
+          mkdir -p /tmp/dex
+          "$D8" --release --min-api 26 --lib "$ANDROID_JAR" --output /tmp/dex \
+            $(find /tmp/classes -name '*.class')
+          ls -l /tmp/dex/classes.dex
+
+  patch-set:
+    name: Patch set
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every patched file has a reason
+        run: |
+          set -euo pipefail
+          # The smali set must stay in step with what scripts/build.sh applies: every
+          # file under the app's resources must carry at least one Morphe comment.
+          missing=0
+          for f in $(find patches/src/main/resources/ather -name '*.smali'); do
+            if ! grep -q "Morphe/Ather patch" "$f"; then
+              echo "no patch comment: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "all patched smali files carry a patch comment"
+
+  spelling:
+    name: Spelling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crate-ci/typos@master
+
+  markdown:
+    name: Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v19
+        with:
+          globs: "*.md"
