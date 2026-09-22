@@ -152,6 +152,12 @@
         <activity android:exported="true" android:label="Morphe settings" android:name="app.morphe.ather.MorpheMapSettingsActivity" android:screenOrientation="portrait" android:theme="@android:style/Theme.Material.NoActionBar"/>
         <activity android:exported="true" android:label="Morphe history" android:name="app.morphe.ather.MorpheHistoryActivity" android:screenOrientation="portrait" android:theme="@android:style/Theme.Material.NoActionBar"/>
         <activity android:exported="true" android:label="Morphe ride" android:name="app.morphe.ather.MorpheRideActivity" android:screenOrientation="portrait" android:theme="@android:style/Theme.Material.NoActionBar"/>
+        <service android:exported="false" android:foregroundServiceType="connectedDevice" android:name="app.morphe.ather.RideService"/>
+        <receiver android:exported="false" android:name="app.morphe.ather.RideBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
         <activity-alias android:enabled="false" android:exported="true" android:icon="@mipmap/ic_ather_launcher_8" android:label="@string/app_name" android:name="com.athermobileapp.AppIcon8" android:roundIcon="@mipmap/ic_ather_launcher_8_round" android:targetActivity="com.athermobileapp.ui.main.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
