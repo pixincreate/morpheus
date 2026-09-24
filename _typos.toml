@@ -1,8 +1,7 @@
-# The base APKs, the build output and the key watch baseline are binaries or machine
-# generated data, not prose. Everything else is ours and is checked.
+# The base APKs and the build output are binaries or machine generated data, not
+# prose. Everything else is ours and is checked.
 [files]
 extend-exclude = [
-  ".keywatch-baseline.json",
   "base/**",
   "build/**",
   "out/**",
