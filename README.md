@@ -1,64 +1,52 @@
 # Morpheus
 
-Patch sets that make vendor apps usable on de-Googled Android, plus the companion libraries they
-need. The first target is the Ather app (`com.athermobileapp`); more follow.
+## Introduction
 
-This repository ships **patches only**. It does not build, host or publish patched APKs. You build
-your own copy from your own APK, which keeps the repository free of redistributed vendor binaries.
+Morpheus is a [Morphe](https://github.com/MorpheApp/morphe-patches) patch set for Android apps that assume Google Play Services.
+It patches two apps:
 
-## Ather
+- The Ather app (`com.athermobileapp`), verified against 13.5.0.
+- The Nothing X app (`com.nothing.smartcenter`), verified against 3.8.0.
 
-Patches that make the Ather app usable on GrapheneOS, plus a small companion library that adds the
-features Ather removed or never shipped.
+The repository ships patches only.
+It never ships patched APKs or vendor binaries.
+You build your own copy from your own APK.
 
-The Ather app assumes a "Googled" phone: it wants Google Play Services for push and maps, it nags
-about location, it refuses to run with Developer Options enabled, and it gates ride statistics
-behind a server flag that stays off when the scooter is in incognito mode.
+## Lore
 
-## What the patches do
+The Ather app stopped showing ride details when the scooter is in incognito mode.
+It is invasive: it nags for location, contacts, call log and SMS permissions, and it refuses to run when Developer Options is on or when it finds root.
+Its maps do not work on de-Googled Android, because Google Maps needs Play Services and Mappls needs a licence tied to Ather's signing certificate.
+This patch set makes an insane app sane.
 
-| Patch | Effect |
-| --- | --- |
-| Security-check bypass | Stops the Developer Options warning and the root/Frida block. |
-| Signing-certificate fix | Reports the original Ather certificate hash to Google APIs, so Firebase login works after re-signing. |
-| PairIP neuter | Skips the Play license check that the re-signed app cannot pass. |
-| Permission filter | Drops phone-location (and call log, contacts, SMS) from the request list at the single dialog choke point, so the app never asks for permissions it cannot use here. Nothing is faked; the OS permissions stay ungranted. |
-| Pairing wizard | The setup wizard now asks only for Nearby device access, so scooter pairing can complete. |
-| Analytics toggle | Blocks MoEngage, PostHog and Firebase events from the Morphe settings screen. Crashlytics is untouched so bugs stay reportable. |
-| Map provider | Adds a provider chooser (Auto / OpenStreetMap / Google Maps). Mappls is removed because its licence is bound to Ather's signing certificate. OSM renders through the bundled MapLibre. |
-| Morphe settings row | Injects a "Morphe settings" row into the app's Account → General settings list, and repairs the account rows whose deep links the app could not resolve. |
-| Ride log | Rebuilds rides from the live odometer the app already receives, shows them in a Morphe history screen, exports CSV, and injects them into the app's own "All rides" list, month total and chart. |
-| Charge log | Records charging sessions with start/end state of charge. |
-| True Health capture | Keeps every True Health report the app fetches: part scores, battery health history and wear-and-tear (belt, brakes). |
-| Local notifications | Derives alerts from the app's own connection (charging started, fully charged, charging stopped, movement detected, switched on, OTA available, low battery, low range) and shows the notifications the server pushes over the shadow, which the app was discarding. |
-| Background ride service | Optional foreground service that keeps the app's process alive so rides are recorded with real start and end times even while the app is closed. |
+The Nothing X app pushes the K1 token into its own internal, encrypted data instead of the adb log.
+On an unrooted device you cannot get the token that links the watch to Gadgetbridge.
+This repository patches that too.
+Nothing X is invasive as well, so its analytics can be turned off.
+You may not need that, because you will probably uninstall it after getting the token, but it is there.
 
-## Layout
+## Installation
 
-```
-base/                 untouched APKs: the original base APK and the three config splits (local only)
-patches/              the patch set, laid out like a Morphe patches repository
-  src/main/kotlin/app/morphe/patches/ather/
-                      Morphe patch sources (Kotlin), one directory per app
-  src/main/resources/ather/
-                      the files this repository replaces: the patched smali plus the manifest overlay
-companion/            companion library sources (Java) and its build output
-keystore/             local signing key (local only, generate your own)
-out/signed/           signed, installable split set (local only)
-scripts/build.sh      decode base/, apply the patch set, build, overlay, sign
-scripts/sign-all.sh   zipalign + apksigner for the base and the splits
-build/                scratch tree and intermediates (regenerable, not tracked)
+### Toolchain
+
+- JDK 25.
+  `scripts/build.sh` defaults to Android Studio's bundled JBR (`/Applications/Android Studio.app/Contents/jbr/Contents/Home`).
+  Newer JDKs such as Homebrew's JDK 27 fail the Android plugin's `jlink` step.
+- Android build-tools 37.0.0 (`zipalign`, `apksigner`, `aapt2`, `dexdump`) under `~/Library/Android/sdk`.
+- The Morphe CLI 1.16.0, downloaded by the build script into `build/tools/` and verified by SHA-256.
+
+### What you supply
+
+Put your own copy of the Ather APK and its config splits in `base/`:
+
+```text
+base/com.athermobileapp.apk
+base/config.arm64_v8a.apk
+base/config.en.apk
+base/config.mdpi.apk
 ```
 
-## What you supply
-
-`base/` and `keystore/` are not in the repository.
-
-- Put your own copy of the Ather APK and its splits in `base/`: `com.athermobileapp.apk` plus
-  `config.arm64_v8a.apk`, `config.en.apk` and `config.mdpi.apk`.
-- Generate your own signing key. Any key works: the signing-certificate patch reports the original
-  Ather certificate hash to Google's APIs, so Firebase login succeeds even though the app is signed
-  by you.
+Generate your own signing key with `keytool`:
 
 ```bash
 keytool -genkeypair -v -keystore keystore/ather-morphe.jks -alias ather \
@@ -66,82 +54,132 @@ keytool -genkeypair -v -keystore keystore/ather-morphe.jks -alias ather \
   -storepass atherpatch -keypass atherpatch
 ```
 
-`scripts/sign-all.sh` expects exactly that path, alias and password. Change them there if you use
-your own. Because the key differs from Ather's, uninstall any Play Store copy of the app before
-installing this build; after that, installing over an existing build of this repository keeps your
-session.
+`scripts/sign-all.sh` expects that path, alias and password.
+Change them there if you use your own values.
+The repository never ships or fetches a signing key.
 
-## Toolchain
-
-- JDK: `/opt/homebrew/opt/openjdk`
-- `apktool` 3.0.3, `7zz`
-- Android build-tools 37.0.0 (`apksigner`, `zipalign`, `d8`, `dexdump`, `aapt2`) under `~/Library/Android/sdk`
-
-## Build
+### Build
 
 ```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk
-export PATH="$JAVA_HOME/bin:$PATH"
-
-# 1. compile the companion library
-AJAR="$HOME/Library/Android/sdk/platforms/android-37.0/android.jar"
-D8="$HOME/Library/Android/sdk/build-tools/37.0.0/d8"
-find companion/classes -type f -delete
-find companion/out -type f -delete
-mkdir -p companion/classes companion/out
-javac -encoding UTF-8 -source 11 -target 11 -nowarn -classpath "$AJAR" \
-  -d companion/classes companion/src/app/morphe/ather/*.java companion/stub/com/ather/maps/a0.java
-"$D8" --release --min-api 26 --lib "$AJAR" --output companion/out \
-  $(find companion/classes -name '*.class')
-
-# 2. decode base/, apply patches/, rebuild, overlay and sign
-bash scripts/build.sh          # add --clean to force a fresh decode
+bash scripts/build.sh          # add --clean to rebuild the patch bundle from scratch
 ```
 
-Output: `out/signed/{base,config.arm64_v8a,config.en,config.mdpi}.apk`.
+The script builds `patches/build/libs/patches-<version>.mpp`, which embeds both extensions.
+It then applies every patch whose declared package matches the APK to `base/com.athermobileapp.apk` and signs the patched base plus the three original config splits into `out/signed/`.
 
-`scripts/build.sh` decodes the untouched base APK, copies the patch set over it, rebuilds with
-apktool, then overlays only `classes*.dex` and `AndroidManifest.xml` onto the original APK.
-`resources.arsc` and `res/` stay byte-for-byte original, because apktool's resource re-encoding
-corrupted a media3 layout and crashed the app.
+### Install
 
-## Install
-
-All splits share one signature and must be installed together. The build is signed with your own
-key, so uninstall any Play Store copy first.
+All four splits share one signature and must be installed together.
 
 ```bash
-adb install-multiple \
-  out/signed/base.apk \
-  out/signed/config.arm64_v8a.apk \
-  out/signed/config.en.apk \
-  out/signed/config.mdpi.apk
+adb install-multiple out/signed/base.apk out/signed/config.arm64_v8a.apk out/signed/config.en.apk out/signed/config.mdpi.apk
 ```
 
-Installing over an existing build of this repo keeps the session, so there is no need to log in
-again.
+### Limitations
 
-## Reaching the patches
+- When the signing key changes, uninstall the app first.
+  Uninstalling wipes its data, so log in again.
+  The Ather ride log is local, so export it first if you want to keep it.
+- The Nothing X patch needs the `FlutterSecureStorage` class.
+  Nothing X 3.4.17 does not ship that class, so it cannot be patched.
+- The K1 dialog only appears after the watch bind flow has run.
+  On a fresh install there is no token to show.
 
-Open the app, go to **Account → General settings → Morphe settings**. From there you can choose the
-map provider, block analytics, set the battery pack size used for efficiency, toggle background
-ride recording, and open the ride, charge and health history.
+## Usage
 
-## Known limits
+### Ather
 
-- Push notifications cannot use FCM without Google Play Services, and Ather's backend only speaks
-  FCM. The local alerts derived from the app's own connection are the substitute.
-- Per-ride records are missing server-side while the scooter is in incognito mode, so the app's own
-  ride list stays empty. The local ride log covers it.
-- Ride times are exact only for rides the app watched. A ride taken while the app was closed is
-  recorded with its distance and odometer readings, but without a start time.
-- Mappls cannot load: its licence is tied to Ather's signing certificate.
+Open the app and go to Account → General settings → Morphe settings.
 
-## Credits
+The screen holds:
 
-Built on [Morphe patches](https://github.com/MorpheApp/morphe-patches), the continuation of the
-ReVanced project. The `morphe/` directory holds the security bypass as a Morphe bytecode patch;
-compiling it into a bundle needs the Morphe Gradle project and its package registry token.
+- Map provider: Auto (recommended), OpenStreetMap, or Google Maps (requires Play Services).
+  Auto keeps Ather's choice and replaces the providers that cannot work here with OpenStreetMap.
+- Block analytics events: stops MoEngage, PostHog and Firebase events.
+  Crashlytics is untouched, so crash reports still reach Ather.
+- Battery pack (kWh): the pack size used to turn a ride's charge drop into km/unit.
+- Record rides while the app is closed: keeps the app's process alive with a silent ongoing notification, so rides keep their own start and end times.
+- Ride history, Charging history, and Battery and wear history: open the recorded history.
+  The history screen exports all three tables as CSV to Downloads.
 
-The NothingX `logk1token` patch referenced by the ReVanced project was written here first and later
-ported by De-Vanced without attribution.
+Push notifications from Ather's servers need Google Play Services.
+The local notifications derived from the app's own connection are the substitute.
+
+### Nothing X
+
+1. Install the patched Nothing X app.
+2. Log in and bind your watch.
+3. The "K1 Token(s) Found" dialog appears.
+   Tap a token card to copy the token.
+4. In Gadgetbridge, pair the first-generation CMF Watch Pro (D395) and paste the token.
+5. To read the token from logcat instead, run `adb logcat -s Morpheus` and look for the line with `HEX32!` or `HEX64!`.
+
+See [docs/nothingx-k1.md](docs/nothingx-k1.md) for the full mechanism.
+
+## Uninstallation
+
+Uninstall the patched apps and install the vendor builds again.
+
+```bash
+adb uninstall com.athermobileapp
+adb uninstall com.nothing.smartcenter
+```
+
+Uninstalling removes the patched app's data:
+
+- Ather: the Morphe settings, and the local ride, charging and health history.
+- Nothing X: the login session and the captured token.
+
+Export the Ather history from the Morphe history screen before you uninstall if you want to keep it.
+
+## Working
+
+A patch finds its target in the vendor app with a fingerprint, then injects or replaces smali at a known point.
+When a patch needs runtime code, it calls into an extension that the patch bundle mounts into the patched app.
+
+The Ather patches:
+
+| Patch                              | Effect                                                                                                                                                                                                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bypass security check              | Stops the Developer Options warning and the root/Frida block.                                                                                                                                                                                                        |
+| Report Ather's signing certificate | Reports the original Ather certificate hash to Google APIs, so Firebase login works after re-signing.                                                                                                                                                                |
+| Bypass PairIP licence check        | Skips the Play license check that the re-signed app cannot pass.                                                                                                                                                                                                     |
+| Permission filter                  | Drops phone-location (and call log, contacts, SMS) from the request list at the single dialog choke point, so the app never asks for permissions it cannot use here. Nothing is faked; the OS permissions stay ungranted.                                            |
+| Pairing wizard                     | The setup wizard now asks only for Nearby device access, so scooter pairing can complete.                                                                                                                                                                            |
+| Analytics toggle                   | Blocks MoEngage, PostHog and Firebase events from the Morphe settings screen. Crashlytics is untouched so bugs stay reportable.                                                                                                                                      |
+| Map provider                       | Adds a provider chooser (Auto / OpenStreetMap / Google Maps). Mappls is removed because its licence is bound to Ather's signing certificate. OSM renders through the bundled MapLibre.                                                                               |
+| Morphe settings row                | Injects a "Morphe settings" row into the app's Account -> General settings list, and repairs the account rows whose deep links the app could not resolve.                                                                                                            |
+| Ride log                           | Rebuilds rides from the live odometer the app already receives, shows them in a Morphe history screen, exports CSV, and injects them into the app's own "All rides" list, month total and chart.                                                                     |
+| Enable ride stats                  | Turns on the app's own ride-statistics screens. The app gates them behind a server flag that stays off while the scooter is in incognito mode; the ride data itself still comes from the API.                                                                        |
+| Charge log                         | Records charging sessions with start/end state of charge.                                                                                                                                                                                                            |
+| True Health capture                | Keeps every True Health report the app fetches: part scores, battery health history and wear-and-tear (belt, brakes).                                                                                                                                                |
+| Local notifications                | Derives alerts from the app's own connection (charging started, fully charged, charging stopped, movement detected, switched on, OTA available, low battery, low range) and shows the notifications the server pushes over the shadow, which the app was discarding. |
+| Morphe screens                     | Registers the Morphe screens, the optional background ride service and its boot receiver in the app manifest. The service keeps the app's process alive so rides are recorded with real start and end times even while the app is closed.                            |
+
+The `Show K1 token(s)` patch targets Nothing X.
+It hooks the `flutter_secure_storage` plugin inside the app process, because the token is encrypted at rest on 3.8.0.
+
+More detail:
+
+- [docs/architecture.md](docs/architecture.md) — the repository layout, the patch and extension model, and the build pipeline.
+- [docs/ather-patches.md](docs/ather-patches.md) — every Ather patch, the class it touches and the smali it changes.
+- [docs/nothingx-k1.md](docs/nothingx-k1.md) — the K1 token, the hook points and how to verify them.
+- [docs/build-and-release.md](docs/build-and-release.md) — building, signing rules, the CI jobs and the release plan.
+- [docs/verification.md](docs/verification.md) — how the changes were verified.
+
+## Contribution
+
+Fork the repository and create a branch for your change.
+Keep the house style of the surrounding code.
+Before you open a pull request, run `bash scripts/build.sh` and the CI checks: shellcheck, the extension compile, the patch-set check, typos and markdownlint.
+Never commit a keystore or a vendor APK.
+
+## License
+
+The repository is released under [CC0 1.0 Universal](LICENSE).
+
+## Disclaimer
+
+The maintainer is not responsible for anything that happens when you build or install these patches.
+You build and install at your own risk.
+The vendor apps and their trademarks belong to their owners.
