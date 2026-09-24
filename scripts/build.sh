@@ -1,76 +1,79 @@
 #!/usr/bin/env bash
-# Build the patched Ather app from the patch set.
+# Build the patched Ather app from the Morphe patch set.
 #
 # Layout this script expects:
 #   base/       the untouched original APKs (base + config splits)
-#   patches/src/main/resources/ather/
-#               only the files that differ from the original (smali + manifest)
-#   companion/  the Java companion sources (already compiled to out/classes.dex)
-#   build/      scratch: the decoded tree, regenerated when missing (safe to delete)
+#   patches/    the Morphe patch set (Kotlin sources)
+#   extensions/ the Morphe extension (Java sources), compiled into the patch bundle
+#   keystore/   the signing key
+#   build/      scratch: the patch bundle, the Morphe CLI, the patched APK
 #   out/signed/ the installable split set
 #
-# apktool re-encodes resources.arsc and every binary XML on build, which can
-# corrupt library resources (e.g. the media3 PlayerView layout -> InflateException).
-# To avoid that, the ORIGINAL apk's resources.arsc and res/ are kept byte-for-byte
-# and only the patched dex files, the companion dex, and AndroidManifest.xml are
-# swapped in. AndroidManifest.xml is the one resource-like file we must replace,
-# to declare the Morphe screens and the ride service.
+# Gradle builds the patch bundle (patches/build/libs/patches-<version>.mpp), which
+# also carries the compiled extension. The Morphe CLI then applies every patch in
+# the bundle to the untouched APK and writes an unsigned APK. Finally
+# scripts/sign-all.sh signs that APK and the original config splits with one key,
+# because every split in an install set must carry the same signature.
 #
 # Usage:
-#   bash scripts/build.sh            reuse build/tree when it exists (fast)
-#   bash scripts/build.sh --clean    decode the original APK again first
+#   bash scripts/build.sh            incremental
+#   bash scripts/build.sh --clean    rebuild the patch bundle from scratch
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk}"
-export PATH="$JAVA_HOME/bin:$PATH"
+
+# The Android Gradle plugin needs the JDK that ships with Android Studio. The
+# Morphe CLI runs on the same JDK.
+JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+export JAVA_HOME
+ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+export ANDROID_HOME
+JAVA="$JAVA_HOME/bin/java"
+
+# Pin the CLI: the patch bundle format must match the CLI that reads it.
+CLI_VERSION="1.16.0"
+CLI_SHA256="82a0df2ff881d83d5ca8b4f9a6ce196bd4ac3b87ff147fe37845c296b436806c" # keywatch:ignore
+CLI_JAR="$ROOT/build/tools/morphe-desktop-$CLI_VERSION-all.jar"
+CLI_URL="https://github.com/MorpheApp/morphe-desktop/releases/download/v$CLI_VERSION/morphe-desktop-$CLI_VERSION-all.jar"
 
 ORIG_BASE="$ROOT/base/com.athermobileapp.apk"
-TREE="$ROOT/build/tree"
-APKTOOL_OUT="$ROOT/build/apktool-build.apk"
-BASE="$ROOT/build/base-unsigned.apk"
-COMPANION_DEX="$ROOT/companion/out/classes.dex"
+PATCHED_BASE="$ROOT/build/base-unsigned.apk"
+MPP="$ROOT/patches/build/libs/patches-$(sed -n 's/^version *= *//p' "$ROOT/gradle.properties").mpp"
 
-if [ ! -f "$COMPANION_DEX" ]; then
-  echo "companion/out/classes.dex is missing - compile the companion first (see README.md)" >&2
+fail() {
+  echo "$1" >&2
   exit 1
-fi
+}
 
+[ -x "$JAVA" ] || fail "$JAVA is missing - install Android Studio, or set JAVA_HOME to a JDK 17 or newer."
+[ -f "$ORIG_BASE" ] || fail "base/com.athermobileapp.apk is missing - copy the untouched APK there (see README.md)."
+
+mkdir -p "$(dirname "$CLI_JAR")"
+
+if [ ! -f "$CLI_JAR" ]; then
+  echo "[1/4] download the Morphe CLI $CLI_VERSION"
+  curl -fL --retry 3 -o "$CLI_JAR.part" "$CLI_URL"
+  mv "$CLI_JAR.part" "$CLI_JAR"
+fi
+ACTUAL_SHA256="$(shasum -a 256 "$CLI_JAR" | cut -d' ' -f1)"
+[ "$ACTUAL_SHA256" = "$CLI_SHA256" ] || fail "$CLI_JAR does not match the expected checksum - delete it and run the script again."
+
+echo "[2/4] build the patch bundle"
 if [ "${1:-}" = "--clean" ]; then
-  echo "[0/5] removing the decoded tree"
-  rm -rf "$TREE"
+  "$ROOT/gradlew" -p "$ROOT" clean --console=plain
 fi
+"$ROOT/gradlew" -p "$ROOT" :patches:build --console=plain
+[ -f "$MPP" ] || fail "$MPP was not built."
 
-mkdir -p "$ROOT/build"
+echo "[3/4] apply the patch set"
+rm -f "$PATCHED_BASE"
+"$JAVA" -jar "$CLI_JAR" patch \
+  -p="$MPP" \
+  --unsigned \
+  --disable-purge \
+  -t="$ROOT/build/cli-tmp" \
+  -o="$PATCHED_BASE" \
+  "$ORIG_BASE"
 
-if [ ! -d "$TREE" ]; then
-  echo "[1/5] decode the original APK (one-off, a few minutes)"
-  apktool d -f -o "$TREE" "$ORIG_BASE"
-else
-  echo "[1/5] reusing the decoded tree (pass --clean to decode again)"
-fi
-
-echo "[2/5] apply the patch set"
-PATCHES="$ROOT/patches/src/main/resources/ather"
-( cd "$PATCHES" && find . -type f -print0 ) | while IFS= read -r -d '' rel; do
-  mkdir -p "$TREE/$(dirname "$rel")"
-  cp "$PATCHES/$rel" "$TREE/$rel"
-done
-
-echo "[3/5] apktool build (patched dex; its re-encoded resources are ignored)"
-apktool b "$TREE" -o "$APKTOOL_OUT"
-
-echo "[4/5] start from the original APK and swap in the patched dex + manifest"
-cp "$ORIG_BASE" "$BASE"
-tmp="$(mktemp -d)"
-# every classesN.dex from the apktool build carries the smali patches
-7zz e "$APKTOOL_OUT" -o"$tmp" 'classes*.dex' -y >/dev/null
-cp "$COMPANION_DEX" "$tmp/classes7.dex"
-# the rebuilt manifest is the only resource-like file taken from apktool
-7zz e "$APKTOOL_OUT" -o"$tmp" AndroidManifest.xml -y >/dev/null
-( cd "$tmp" && 7zz a -tzip "$BASE" classes*.dex AndroidManifest.xml >/dev/null )
-rm -rf "$tmp"
-
-echo "[5/5] sign"
-bash "$ROOT/scripts/sign-all.sh" >/dev/null
-echo "done -> $ROOT/out/signed/"
+echo "[4/4] sign the patched base APK and the original splits"
+bash "$ROOT/scripts/sign-all.sh"
