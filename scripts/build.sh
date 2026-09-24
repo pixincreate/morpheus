@@ -90,7 +90,7 @@ echo "[2/4] build the patch bundle"
 if [ "${1:-}" = "--clean" ]; then
   "$ROOT/gradlew" -p "$ROOT" clean --console=plain
 fi
-"$ROOT/gradlew" -p "$ROOT" :patches:build --console=plain
+"$ROOT/gradlew" -p "$ROOT" :patches:buildAndroid --console=plain
 [ -f "$MPP" ] || fail "$MPP was not built."
 
 echo "[3/4] apply the patch set"
