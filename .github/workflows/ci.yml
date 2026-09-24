@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -14,16 +14,16 @@ jobs:
     name: Shell scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: shellcheck
         run: shellcheck scripts/*.sh
 
-  companion:
-    name: Companion sources
+  extension:
+    name: Extension sources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Compile the companion with the newest installed platform
+      - uses: actions/checkout@v7
+      - name: Compile the extension with the newest installed platform
         run: |
           set -euo pipefail
           ANDROID_JAR=$(ls -1 "$ANDROID_HOME"/platforms/*/android.jar | sort -V | tail -1)
@@ -32,9 +32,10 @@ jobs:
           javac -encoding UTF-8 -source 11 -target 11 -nowarn \
             -classpath "$ANDROID_JAR" \
             -d /tmp/classes \
-            companion/src/app/morphe/ather/*.java \
-            companion/stub/com/ather/maps/a0.java
-      - name: Package the companion with d8
+            extensions/ather/src/main/java/app/morphe/ather/*.java \
+            extensions/ather/stub/src/main/java/com/ather/maps/a0.java \
+            extensions/nothingx/src/main/java/app/morphe/extension/nothingx/patches/*.java
+      - name: Package the extension with d8
         run: |
           set -euo pipefail
           ANDROID_JAR=$(ls -1 "$ANDROID_HOME"/platforms/*/android.jar | sort -V | tail -1)
@@ -49,29 +50,29 @@ jobs:
     name: Patch set
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Every patched file has a reason
+      - uses: actions/checkout@v7
+      - name: Every patch that calls the extension ships it
         run: |
           set -euo pipefail
-          # The smali set must stay in step with what scripts/build.sh applies: every
-          # file under the app's resources must carry at least one Morphe comment.
+          # A patch that injects a call to an extension class must declare the
+          # extension, otherwise the patched app crashes with NoClassDefFoundError.
           missing=0
-          for f in $(find patches/src/main/resources/ather -name '*.smali'); do
-            if ! grep -q "Morphe/Ather patch" "$f"; then
-              echo "no patch comment: $f"
+          for f in $(find patches/src/main/kotlin/app/morphe/patches -name '*.kt'); do
+            if { grep -q "Lapp/morphe/ather/" "$f" || grep -q "Lapp/morphe/extension/" "$f"; } && ! grep -q 'extendWith("extensions/' "$f"; then
+              echo "no extendWith: $f"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
-          echo "all patched smali files carry a patch comment"
+          echo "every patch that calls the extension declares it"
 
   spelling:
     name: Spelling
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: crate-ci/typos@master
 
   markdown:
