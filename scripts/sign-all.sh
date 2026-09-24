@@ -26,6 +26,7 @@ BUILD_TOOLS_VERSION="${BUILD_TOOLS_VERSION:-37.0.0}"
 BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
 KS="${KS:-$ROOT/keystore/$APP_NAME-morphe.jks}"
 KS_PASS="${KS_PASS:-${APP_NAME}patch}"
+export KS_PASS
 KS_ALIAS="${KS_ALIAS:-$APP_NAME}"
 SPLITS="${SPLITS:-config.arm64_v8a config.en config.mdpi}"
 
@@ -33,6 +34,10 @@ SRC_SPLITS_DIR="${SRC_SPLITS_DIR:-$ROOT/base}"  # original config.*.apk live her
 PATCHED_BASE="${PATCHED_BASE:-$ROOT/build/base-unsigned.apk}"
 OUT_DIR="${OUT_DIR:-$ROOT/out/signed}"
 
+if [ -z "$OUT_DIR" ] || [ "$OUT_DIR" = "/" ]; then
+  echo "refusing to remove OUT_DIR '$OUT_DIR'" >&2
+  exit 1
+fi
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
@@ -42,7 +47,7 @@ align_and_sign() {
   local final="$OUT_DIR/${name}.apk"
   "$BT/zipalign" -p -f 4 "$in" "$aligned"
   "$BT/apksigner" sign \
-    --ks "$KS" --ks-pass "pass:$KS_PASS" --ks-key-alias "$KS_ALIAS" \
+    --ks "$KS" --ks-pass env:KS_PASS --ks-key-alias "$KS_ALIAS" \
     --v1-signing-enabled true --v2-signing-enabled true \
     --v3-signing-enabled true --v4-signing-enabled false \
     --out "$final" "$aligned"

@@ -4,6 +4,7 @@ build/
 
 # Gradle's local cache and the machine-specific SDK path.
 .gradle/
+.kotlin/
 local.properties
 
 # Signed splits produced by scripts/build.sh.

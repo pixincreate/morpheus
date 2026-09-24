@@ -175,10 +175,6 @@ public final class HealthLog {
         return f.get(target);
     }
 
-    private static int size(Object list) {
-        return list instanceof List ? ((List<?>) list).size() : -1;
-    }
-
     private static void storeWear(String id, String name, int remainingKms, int totalKms,
                                   int lifePercent) {
         try {
