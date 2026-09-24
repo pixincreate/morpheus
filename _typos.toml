@@ -1,10 +1,18 @@
-# The patched smali is decompiled bytecode: its identifiers are machine generated and
-# carry no meaning to a spell checker. Everything else is ours and is checked.
+# The base APKs, the build output and the key watch baseline are binaries or machine
+# generated data, not prose. Everything else is ours and is checked.
 [files]
 extend-exclude = [
-  "patches/src/main/resources/**",
   ".keywatch-baseline.json",
   "base/**",
   "build/**",
   "out/**",
 ]
+
+# The vendor and product names this repository is about. "Ather" is the scooter
+# maker, not a misspelling of "other".
+[default.extend-words]
+Ather = "Ather"
+ather = "ather"
+# Smali opcode names and the English ordinal suffix are code, not prose.
+iput = "iput"
+nd = "nd"
