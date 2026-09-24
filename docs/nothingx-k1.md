@@ -38,8 +38,6 @@ The fingerprints were verified against Nothing X 3.8.0, and the patch fails inst
 In the read hook, `p1` is the key and `vN` is the register that holds the decrypted value at the return.
 Every return is patched, and the later returns are patched first so the earlier instruction indices stay valid.
 
-Nothing X 3.4.17 does not ship the `FlutterSecureStorage` class, so that version cannot be patched.
-
 ## Candidate filter
 
 `onKeychainEntry` keeps a value only when it is exactly 32 or 64 hexadecimal characters.
@@ -65,8 +63,6 @@ The extension keeps the scan of the app's log files and databases for versions t
 
 - It reads `/data/data/com.nothing.smartcenter/files/log`, matches `k1:` and `r3+k1:` lines, and prefers a token seen in the `watchbind` flow over one from a reconnect.
 - If the logs hold no token, it reads the app's databases for a 32-character hex value, skipping Firebase, cache and chat databases.
-- When the strict scan finds nothing, the extension runs a read-only discovery pass over the log, prefs, database and config files.
-  The discovery pass logs masked samples and caps how much of each file it reads.
 
 The strict scan logs `scan finished, <n> token(s)` and then `#<n>: <TOKEN>` for each token it found, so a token found in the files can also be read from logcat.
 

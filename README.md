@@ -81,7 +81,6 @@ adb install-multiple out/signed/base.apk out/signed/config.arm64_v8a.apk out/sig
   Uninstalling wipes its data, so log in again.
   The Ather ride log is local, so export it first if you want to keep it.
 - The Nothing X patch needs the `FlutterSecureStorage` class.
-  Nothing X 3.4.17 does not ship that class, so it cannot be patched.
 - The K1 dialog only appears after the watch bind flow has run.
   On a fresh install there is no token to show.
 
@@ -100,7 +99,7 @@ The screen holds:
 - Battery pack (kWh): the pack size used to turn a ride's charge drop into km/unit.
 - Record rides while the app is closed: keeps the app's process alive with a silent ongoing notification, so rides keep their own start and end times.
 - Ride history, Charging history, and Battery and wear history: open the recorded history.
-  The history screen exports all three tables as CSV to Downloads.
+  The history screen exports all three tables as CSV to Downloads on Android 10 and later.
 
 Push notifications from Ather's servers need Google Play Services.
 The local notifications derived from the app's own connection are the substitute.

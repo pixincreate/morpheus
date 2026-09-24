@@ -14,7 +14,7 @@ import com.android.tools.smali.dexlib2.AccessFlags
  * The K1 authentication token only exists in the app's own database and log files,
  * and the app writes those while it starts, so the token scan runs from here.
  *
- * Equivalent smali (verified against 3.4.17 and 3.8.0):
+ * Equivalent smali (verified against 3.8.0):
  *
  *     .method public onCreate()V
  */

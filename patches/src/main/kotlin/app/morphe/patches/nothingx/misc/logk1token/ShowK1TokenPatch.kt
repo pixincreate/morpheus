@@ -29,7 +29,7 @@ private const val ON_KEYCHAIN_ENTRY =
  *
  * Newer models negotiate the key themselves and need nothing from this patch.
  *
- * Equivalent smali (verified against 3.4.17 and 3.8.0):
+ * Equivalent smali (verified against 3.8.0):
  *
  *     invoke-static { p0 }, Lapp/morphe/extension/nothingx/patches/ShowK1TokensPatch;->showK1Tokens(Landroid/content/Context;)V keywatch:ignore
  */
