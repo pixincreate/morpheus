@@ -327,12 +327,13 @@ public final class RideLog {
                     // The ride began somewhere between the previous sample and this one, so that
                     // window is what the app actually knows. A tight window means it watched the
                     // ride start; a wide one means it only saw the scooter after the ride.
-                    openStart = lastTime != 0L ? lastTime : now;
+                    openStart = sessionStart(lastTime, now);
                     openDist = 0.0;
                     e.putLong(KEY_OPEN_START, openStart);
                     e.putString(KEY_OPEN_START_ODO, odo(lastOdo));
                     e.putString(KEY_OPEN_DIST, "0");
-                    e.putBoolean(KEY_OPEN_EXACT, now - openStart <= MAX_BACKDATE_MS);
+                    e.putBoolean(KEY_OPEN_EXACT,
+                            lastTime != 0L && now - lastTime <= MAX_BACKDATE_MS);
                     // The state of charge the ride started from. The previous sample's value is
                     // still in the prefs here, because the charge tracker runs after this.
                     e.putString(KEY_OPEN_SOC, p.getString(KEY_SOC_LAST, values[SOC_INDEX]));
