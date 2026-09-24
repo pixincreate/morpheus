@@ -55,7 +55,7 @@ keytool -genkeypair -v -keystore keystore/ather-morphe.jks -alias ather \
 ```
 
 `scripts/sign-all.sh` expects that path, alias and password.
-Change them there if you use your own values.
+Override `KS`, `KS_ALIAS` and `KS_PASS` in the environment to use your own values.
 The repository never ships or fetches a signing key.
 
 ### Build

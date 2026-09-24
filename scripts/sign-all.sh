@@ -4,25 +4,42 @@
 # Every split in an install set must be signed with the same key, or the
 # package manager rejects the install (INSTALL_FAILED_INVALID_APK /
 # signature mismatch).
+#
+# Override these settings in the environment to reuse the script for another app:
+#   APP_NAME             keystore name (default: ather)
+#   SPLITS               config split names under base/, space separated
+#                        (default: config.arm64_v8a config.en config.mdpi)
+#   SRC_SPLITS_DIR       directory with the original config.*.apk (default: base)
+#   PATCHED_BASE         unsigned patched base APK (default: build/base-unsigned.apk)
+#   OUT_DIR              signed output directory (default: out/signed)
+#   KS                   signing keystore (default: keystore/<APP_NAME>-morphe.jks)
+#   KS_PASS              keystore password (default: <APP_NAME>patch)
+#   KS_ALIAS             key alias (default: <APP_NAME>)
+#   ANDROID_HOME         Android SDK (default: ~/Library/Android/sdk)
+#   BUILD_TOOLS_VERSION  build-tools revision (default: 37.0.0)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BT="$HOME/Library/Android/sdk/build-tools/37.0.0"
-KS="$ROOT/keystore/ather-morphe.jks"
-KS_PASS="atherpatch"
-KS_ALIAS="ather"
+APP_NAME="${APP_NAME:-ather}"
+ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+BUILD_TOOLS_VERSION="${BUILD_TOOLS_VERSION:-37.0.0}"
+BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+KS="${KS:-$ROOT/keystore/$APP_NAME-morphe.jks}"
+KS_PASS="${KS_PASS:-${APP_NAME}patch}"
+KS_ALIAS="${KS_ALIAS:-$APP_NAME}"
+SPLITS="${SPLITS:-config.arm64_v8a config.en config.mdpi}"
 
-SRC_SPLITS_DIR="$ROOT/base"            # original config.*.apk live here
-PATCHED_BASE="$ROOT/build/base-unsigned.apk"
-OUT="$ROOT/out/signed"
+SRC_SPLITS_DIR="${SRC_SPLITS_DIR:-$ROOT/base}"  # original config.*.apk live here
+PATCHED_BASE="${PATCHED_BASE:-$ROOT/build/base-unsigned.apk}"
+OUT_DIR="${OUT_DIR:-$ROOT/out/signed}"
 
-rm -rf "$OUT"
-mkdir -p "$OUT"
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR"
 
 align_and_sign() {
   local in="$1" name="$2"
-  local aligned="$OUT/${name}.aligned.apk"
-  local final="$OUT/${name}.apk"
+  local aligned="$OUT_DIR/${name}.aligned.apk"
+  local final="$OUT_DIR/${name}.apk"
   "$BT/zipalign" -p -f 4 "$in" "$aligned"
   "$BT/apksigner" sign \
     --ks "$KS" --ks-pass "pass:$KS_PASS" --ks-key-alias "$KS_ALIAS" \
@@ -34,18 +51,20 @@ align_and_sign() {
 }
 
 align_and_sign "$PATCHED_BASE" "base"
-for s in config.arm64_v8a config.en config.mdpi; do
+INSTALL_APKS="$OUT_DIR/base.apk"
+for s in $SPLITS; do
   align_and_sign "$SRC_SPLITS_DIR/${s}.apk" "$s"
+  INSTALL_APKS="$INSTALL_APKS $OUT_DIR/$s.apk"
 done
 
 echo
 echo "Verifying signatures:"
-for f in "$OUT"/*.apk; do
+for f in "$OUT_DIR"/*.apk; do
   echo "== $(basename "$f") =="
   "$BT/apksigner" verify --print-certs "$f" | grep -E 'Signer #1 certificate SHA-256|Verified using' || true
 done
 
 echo
-echo "Install set ready in: $OUT"
+echo "Install set ready in: $OUT_DIR"
 echo "Install with the phone connected:"
-echo "  adb install-multiple $OUT/base.apk $OUT/config.arm64_v8a.apk $OUT/config.en.apk $OUT/config.mdpi.apk"
+echo "  adb install-multiple $INSTALL_APKS"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the patched Ather app from the Morphe patch set.
+# Build the patched app from a Morphe patch set.
 #
 # Layout this script expects:
 #   base/       the untouched original APKs (base + config splits)
@@ -18,6 +18,17 @@
 # Usage:
 #   bash scripts/build.sh            incremental
 #   bash scripts/build.sh --clean    rebuild the patch bundle from scratch
+#
+# Override these settings in the environment to reuse the script for another app:
+#   APP_NAME      patches/<APP_NAME> is the patch set to read the app package from
+#                 (default: ather)
+#   APP_PACKAGE   app package the patches target, read from the patch sources when
+#                 unset
+#   BASE_APK      untouched base APK (default: base/<APP_PACKAGE>.apk)
+#   JAVA_HOME     JDK 17 or newer (default: Android Studio's JBR)
+#   ANDROID_HOME  Android SDK (default: ~/Library/Android/sdk)
+# scripts/sign-all.sh also reads APP_NAME, SPLITS, KS, KS_PASS, KS_ALIAS, OUT_DIR,
+# ANDROID_HOME and BUILD_TOOLS_VERSION.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -36,17 +47,34 @@ CLI_SHA256="82a0df2ff881d83d5ca8b4f9a6ce196bd4ac3b87ff147fe37845c296b436806c" # 
 CLI_JAR="$ROOT/build/tools/morphe-desktop-$CLI_VERSION-all.jar"
 CLI_URL="https://github.com/MorpheApp/morphe-desktop/releases/download/v$CLI_VERSION/morphe-desktop-$CLI_VERSION-all.jar"
 
-ORIG_BASE="$ROOT/base/com.athermobileapp.apk"
-PATCHED_BASE="$ROOT/build/base-unsigned.apk"
-MPP="$ROOT/patches/build/libs/patches-$(sed -n 's/^version *= *//p' "$ROOT/gradle.properties").mpp"
-
 fail() {
   echo "$1" >&2
   exit 1
 }
 
+APP_NAME="${APP_NAME:-ather}"
+
+# Each patch declares the package it targets with compatibleWith(...). Patch sets
+# for different apps live in directories named after the app, so APP_NAME selects
+# the set to read the package from.
+detect_app_package() {
+  local dir="$ROOT/patches/src/main/kotlin/app/morphe/patches/$APP_NAME"
+  [ -d "$dir" ] || return 1
+  grep -rhoE 'compatibleWith\("[^"]+"\)' "$dir" |
+    sed 's/^compatibleWith("//; s/")$//' |
+    sort -u |
+    head -n 1
+}
+APP_PACKAGE="${APP_PACKAGE:-$(detect_app_package || true)}"
+[ -n "$APP_PACKAGE" ] || [ -n "${BASE_APK:-}" ] ||
+  fail "cannot read the app package from patches/src/main/kotlin/app/morphe/patches/$APP_NAME - set APP_PACKAGE."
+
+BASE_APK="${BASE_APK:-$ROOT/base/$APP_PACKAGE.apk}"
+PATCHED_BASE="$ROOT/build/base-unsigned.apk"
+MPP="$ROOT/patches/build/libs/patches-$(sed -n 's/^version *= *//p' "$ROOT/gradle.properties").mpp"
+
 [ -x "$JAVA" ] || fail "$JAVA is missing - install Android Studio, or set JAVA_HOME to a JDK 17 or newer."
-[ -f "$ORIG_BASE" ] || fail "base/com.athermobileapp.apk is missing - copy the untouched APK there (see README.md)."
+[ -f "$BASE_APK" ] || fail "${BASE_APK#"$ROOT"/} is missing - copy the untouched APK there (see README.md)."
 
 mkdir -p "$(dirname "$CLI_JAR")"
 
@@ -73,7 +101,7 @@ rm -f "$PATCHED_BASE"
   --disable-purge \
   -t="$ROOT/build/cli-tmp" \
   -o="$PATCHED_BASE" \
-  "$ORIG_BASE"
+  "$BASE_APK"
 
 echo "[4/4] sign the patched base APK and the original splits"
 bash "$ROOT/scripts/sign-all.sh"

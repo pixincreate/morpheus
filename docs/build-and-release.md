@@ -41,7 +41,7 @@ adb install-multiple out/signed/base.apk out/signed/config.arm64_v8a.apk out/sig
 - Every APK in an install set must be signed with the same key, or the package manager rejects the install.
   This is why `scripts/build.sh` patches first and signs in a separate step.
 - `scripts/sign-all.sh` expects `keystore/ather-morphe.jks`, alias `ather` and password `atherpatch`.
-  Change them there if you use your own values.
+  Override `KS`, `KS_ALIAS` and `KS_PASS` in the environment to use your own values.
 - Generate your own key with `keytool`:
 
 ```bash
