@@ -8,7 +8,7 @@ patches {
         author = "PiX"
         contact = "na"
         website = "https://github.com/pixincreate/morpheus"
-        license = "GNU General Public License v3.0"
+        license = "CC0 1.0 Universal"
     }
 }
 
