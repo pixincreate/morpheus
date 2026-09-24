@@ -1,6 +1,6 @@
 /*
  * Ather Morphe patches.
- * Licensed under GPLv3 to match the Morphe project it plugs into.
+ * Licensed under CC0 1.0 Universal.
  */
 
 package app.morphe.patches.ather.misc.security

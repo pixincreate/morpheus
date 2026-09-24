@@ -1,6 +1,6 @@
 /*
  * Ather Morphe patches.
- * Licensed under GPLv3 to match the Morphe project it plugs into.
+ * Licensed under CC0 1.0 Universal.
  */
 
 package app.morphe.patches.ather.misc.security
@@ -30,4 +30,44 @@ internal object PerformSecurityCheckFingerprint : Fingerprint(
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
     returnType = "Lcom/ather/common/utils/coreUtils/SecurityCheck\$CheckResult;",
     parameters = listOf("Z"),
+)
+
+/**
+ * Matches `AndroidUtilsLight.getPackageCertificateHashBytes`.
+ *
+ * ```
+ * public static byte[] getPackageCertificateHashBytes(Context context, String packageName)
+ * ```
+ *
+ * Firebase Installations, Firebase Auth and Remote Config all funnel their
+ * `X-Android-Cert` header through this helper, and Ather's Google API key is
+ * restricted to Ather's own signing certificate. Both the class and the method name
+ * are obfuscated in 13.5.0, so the fingerprint pins the defining class and the exact
+ * signature rather than readable names.
+ */
+internal object PackageCertificateHashFingerprint : Fingerprint(
+    definingClass = "Lcom/google/android/gms/common/util/c;",
+    name = "e",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    returnType = "[B",
+    parameters = listOf("Landroid/content/Context;", "Ljava/lang/String;"),
+)
+
+/**
+ * Matches PairIP's `Application.attachBaseContext`.
+ *
+ * ```
+ * protected void attachBaseContext(Context context)
+ * ```
+ *
+ * PairIP injects this class as the app's real `Application`, and its
+ * `attachBaseContext` is the single place where the Play licence check starts. The
+ * class name survives obfuscation because PairIP must reference it from the manifest.
+ */
+internal object PairIpAttachBaseContextFingerprint : Fingerprint(
+    definingClass = "Lcom/pairip/application/Application;",
+    name = "attachBaseContext",
+    accessFlags = listOf(AccessFlags.PROTECTED),
+    returnType = "V",
+    parameters = listOf("Landroid/content/Context;"),
 )
