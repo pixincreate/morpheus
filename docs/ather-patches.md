@@ -345,7 +345,7 @@ This is a resource patch, so it edits the manifest document instead of smali.
 - `app.morphe.ather.MorpheMapSettingsActivity`, label "Morphe settings".
 - `app.morphe.ather.MorpheHistoryActivity`, label "Morphe history".
 - `app.morphe.ather.MorpheRideActivity`, label "Morphe ride".
-- The activities are exported, locked to portrait and use `@android:style/Theme.Material.NoActionBar`.
+- The activities are not exported, locked to portrait and use `@android:style/Theme.Material.NoActionBar`.
 - `app.morphe.ather.RideService`, not exported, `foregroundServiceType="connectedDevice"`.
 - `app.morphe.ather.RideBootReceiver`, not exported, with a `BOOT_COMPLETED` intent filter.
 

@@ -43,7 +43,7 @@ val morpheScreensPatch = resourcePatch(
             SCREENS.forEach { (label, className) ->
                 val activity = document.createElement("activity")
                 activity.setAttribute("android:name", "$EXTENSION_PACKAGE.$className")
-                activity.setAttribute("android:exported", "true")
+                activity.setAttribute("android:exported", "false")
                 activity.setAttribute("android:label", label)
                 activity.setAttribute("android:screenOrientation", "portrait")
                 activity.setAttribute("android:theme", "@android:style/Theme.Material.NoActionBar")
