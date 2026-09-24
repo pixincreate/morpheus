@@ -71,6 +71,7 @@ public final class RideStats {
             for (String[] record : RideLog.historyRecords()) {
                 long start = asLong(record[0]);
                 long end = asLong(record[1]);
+                long shown = displayTime(record);
                 String distance = record[2];
                 boolean exact = !"0".equals(record[5]);
                 // A ride the app did not watch has no start time, and the time it was noticed is
@@ -78,7 +79,7 @@ public final class RideStats {
                 rides.add(rideData.newInstance(
                         exact ? range(start, end) : "",
                         (distance == null ? "?" : distance) + " km",
-                        exact ? day(start) : dayOnly(end),
+                        exact ? day(shown) : dayOnly(shown),
                         null,
                         odo(record[3]),
                         exact ? clock(start) : "",
@@ -182,6 +183,15 @@ public final class RideStats {
     }
 
     /**
+     * The time a locally recorded ride is shown under. An exact ride is dated by its start; a ride
+     * the app did not watch is dated by the time the app noticed it, because the window start can
+     * be much earlier.
+     */
+    private static long displayTime(String[] record) {
+        return "0".equals(record[5]) ? asLong(record[1]) : asLong(record[0]);
+    }
+
+    /**
      * Adds the rides recorded on this phone to the month figures behind "Your month so far".
      * The server keeps no rides for an incognito scooter, so its monthly totals are zero.
      *
@@ -199,11 +209,11 @@ public final class RideStats {
             double localKm = 0.0;
             Set<Integer> localDays = new HashSet<>();
             for (String[] record : RideLog.historyRecords()) {
-                long start = asLong(record[0]);
-                if (start <= 0L) {
+                long shown = displayTime(record);
+                if (shown <= 0L) {
                     continue;
                 }
-                calendar.setTimeInMillis(start);
+                calendar.setTimeInMillis(shown);
                 if (calendar.get(Calendar.YEAR) != year || calendar.get(Calendar.MONTH) != month) {
                     continue;
                 }
@@ -285,11 +295,11 @@ public final class RideStats {
         int year = calendar.get(Calendar.YEAR);
         int month = calendar.get(Calendar.MONTH);
         for (String[] record : RideLog.historyRecords()) {
-            long start = asLong(record[0]);
-            if (start <= 0L) {
+            long shown = displayTime(record);
+            if (shown <= 0L) {
                 continue;
             }
-            calendar.setTimeInMillis(start);
+            calendar.setTimeInMillis(shown);
             if (calendar.get(Calendar.YEAR) != year || calendar.get(Calendar.MONTH) != month) {
                 continue;
             }
