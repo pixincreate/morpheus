@@ -39,10 +39,7 @@ import android.widget.Toast;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileReader;
-import java.io.RandomAccessFile;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -78,24 +75,6 @@ public class ShowK1TokensPatch {
     private static final Pattern HEX_32_PATTERN = Pattern.compile("[0-9a-fA-F]{32}");
     private static final Pattern KEYCHAIN_HEX_32_PATTERN = Pattern.compile("^[0-9a-fA-F]{32}$");
     private static final Pattern KEYCHAIN_HEX_64_PATTERN = Pattern.compile("^[0-9a-fA-F]{64}$");
-
-    private static final Pattern HEX_RUN_PATTERN = Pattern.compile("(?i)[0-9a-f]{16,}");
-    private static final Pattern SENSITIVE_COLUMN_PATTERN =
-            Pattern.compile("(?i)(k1|token|secret|auth|key)");
-    private static final Pattern HEX_RUN_32_PLUS_PATTERN =
-            Pattern.compile("(?i)(?<![0-9a-f])[0-9a-f]{32,}(?![0-9a-f])");
-    private static final long DISCOVERY_MAX_BYTES = 2L * 1024 * 1024;
-    private static final int DISCOVERY_MAX_LINE_CHARS = 200;
-    private static final int DISCOVERY_MAX_K1_LINES = 5;
-    private static final int DISCOVERY_MAX_TAIL_LINES = 20;
-    private static final int DISCOVERY_MAX_PREFS_LINES = 5;
-    private static final int DISCOVERY_MAX_DIR_ENTRIES = 40;
-    private static final int DISCOVERY_MAX_TABLES = 40;
-    private static final int DISCOVERY_MAX_COLUMN_SAMPLES = 3;
-    private static final int DISCOVERY_MAX_DB_ROWS = 5;
-    private static final long DISCOVERY_MAX_FILE_BYTES = 512L * 1024;
-    private static final int DISCOVERY_MAX_FILES = 60;
-    private static final int DISCOVERY_MAX_HEX_RUNS = 20;
 
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
 
@@ -175,8 +154,8 @@ public class ShowK1TokensPatch {
                 .append(loggedKey)
                 .append(" = ")
                 .append(maskKeychainValue(value));
-        if (containsExactDiscoveryHexRun(value, 32)) line.append(" HEX32!");
-        if (containsExactDiscoveryHexRun(value, 64)) line.append(" HEX64!");
+        if (KEYCHAIN_HEX_32_PATTERN.matcher(value).matches()) line.append(" HEX32!");
+        if (KEYCHAIN_HEX_64_PATTERN.matcher(value).matches()) line.append(" HEX64!");
         Log.i(TAG, line.toString());
     }
 
@@ -225,10 +204,7 @@ public class ShowK1TokensPatch {
                 Set<String> tokens = collectK1Tokens();
                 Log.i(TAG, "scan finished, " + tokens.size() + " token(s)");
 
-                if (tokens.isEmpty()) {
-                    runK1Discovery();
-                    return;
-                }
+                if (tokens.isEmpty()) return;
 
                 int index = 1;
                 for (String token : tokens) {
@@ -650,10 +626,6 @@ public class ShowK1TokensPatch {
         return nearest;
     }
 
-    private static String maskToken(String value) {
-        return value.substring(0, Math.min(6, value.length())) + "...";
-    }
-
     private static Set<String> getK1TokensFromLogFiles() {
         Set<String> pairingTokens = new LinkedHashSet<>();
         Set<String> reconnectTokens = new LinkedHashSet<>();
@@ -688,8 +660,8 @@ public class ShowK1TokensPatch {
                         if (combinedMatcher.find()) {
                             String combined = combinedMatcher.group(1);
                             if (combined != null) {
-                                Log.i(TAG, "k1 candidate: " + maskToken(combined)
-                                        + " (len " + combined.length() + ", pattern r3+k1:)");
+                                Log.i(TAG, "k1 candidate: " + maskKeychainValue(combined)
+                                        + ", pattern r3+k1:");
                             }
                             if (combined != null && combined.length() == 64) {
                                 k1Token = combined.substring(32).toLowerCase();
@@ -701,8 +673,8 @@ public class ShowK1TokensPatch {
                             if (standaloneMatcher.find()) {
                                 String token = standaloneMatcher.group(1); // keywatch:ignore
                                 if (token != null) {
-                                    Log.i(TAG, "k1 candidate: " + maskToken(token)
-                                            + " (len " + token.length() + ", pattern k1:)");
+                                    Log.i(TAG, "k1 candidate: " + maskKeychainValue(token)
+                                            + ", pattern k1:");
                                     // A 64-char value is r3 (first 32) + K1 (last 32); without this the r3 half is surfaced.
                                     if (token.length() == 64) token = token.substring(32);
                                     if (token.length() == 32) k1Token = token.toLowerCase();
@@ -814,500 +786,4 @@ public class ShowK1TokensPatch {
         }
     }
 
-    private static void runK1Discovery() {
-        Log.i(TAG, "discover: strict scan yielded 0 tokens, starting discovery");
-        discoverLogFiles();
-        discoverPrivateDirs();
-        discoverPrefsFiles();
-        discoverDatabases();
-        discoverDatastoreAndConfigFiles();
-        discoverPrefsHexRuns();
-        Log.i(TAG, "discover: finished");
-    }
-
-    private static String maskDiscoveryValue(String value) {
-        if (value == null) return "(null)";
-        return value.substring(0, Math.min(6, value.length())) + "…";
-    }
-
-    private static String maskDiscoveryLine(String line) {
-        if (line == null) return "";
-        Matcher matcher = HEX_RUN_PATTERN.matcher(line);
-        StringBuffer masked = new StringBuffer();
-        while (matcher.find()) {
-            matcher.appendReplacement(masked,
-                    Matcher.quoteReplacement(maskDiscoveryValue(matcher.group())));
-        }
-        matcher.appendTail(masked);
-        String result = masked.toString();
-        if (result.length() > DISCOVERY_MAX_LINE_CHARS) {
-            result = result.substring(0, DISCOVERY_MAX_LINE_CHARS);
-        }
-        return result;
-    }
-
-    private static File[] listDiscoveryLogFiles() {
-        File logDir = new File("/data/data/" + PACKAGE_NAME + "/files/log");
-        if (!logDir.exists() || !logDir.isDirectory()) return null;
-        return logDir.listFiles((dir, name) ->
-                name.endsWith(".log") || name.endsWith(".log.") || name.matches(".*\\.log\\.\\d+"));
-    }
-
-    private static void discoverLogFiles() {
-        try {
-            File[] logFiles = listDiscoveryLogFiles();
-            if (logFiles == null || logFiles.length == 0) return;
-            for (File logFile : logFiles) {
-                try {
-                    Log.i(TAG, "discover: log file: " + logFile.getAbsolutePath()
-                            + " (" + logFile.length() + " bytes)");
-                    discoverLogFileContent(logFile);
-                    discoverLogFileTail(logFile);
-                } catch (Throwable t) {
-                    Log.w(TAG, "discover: failed to inspect log file " + logFile.getName(), t);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to list log files", t);
-        }
-    }
-
-    private static void discoverLogFileContent(File logFile) {
-        int k1Lines = 0;
-        List<String> samples = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new FileReader(logFile))) {
-            String line;
-            long consumed = 0;
-            while ((line = reader.readLine()) != null) {
-                consumed += line.length() + 1;
-                if (consumed > DISCOVERY_MAX_BYTES) break;
-                if (line.toLowerCase().contains("k1")) {
-                    k1Lines++;
-                    if (samples.size() < DISCOVERY_MAX_K1_LINES) {
-                        samples.add(maskDiscoveryLine(line));
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to read log file " + logFile.getName(), t);
-        }
-        Log.i(TAG, "discover: k1-ish lines: " + k1Lines + " in " + logFile.getName());
-        for (String sample : samples) Log.i(TAG, "discover: k1-ish: " + sample);
-    }
-
-    private static void discoverLogFileTail(File logFile) {
-        List<String> tail = new ArrayList<>();
-        try (RandomAccessFile file = new RandomAccessFile(logFile, "r")) {
-            long start = Math.max(0L, file.length() - DISCOVERY_MAX_BYTES);
-            file.seek(start);
-            boolean skipPartial = start > 0;
-            String line;
-            while ((line = file.readLine()) != null) {
-                if (skipPartial) {
-                    skipPartial = false;
-                    continue;
-                }
-                tail.add(line);
-                if (tail.size() > DISCOVERY_MAX_TAIL_LINES) tail.remove(0);
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to read tail of " + logFile.getName(), t);
-            return;
-        }
-        Log.i(TAG, "discover: tail file: " + logFile.getName());
-        for (String line : tail) Log.i(TAG, "discover: tail: " + maskDiscoveryLine(line));
-    }
-
-    private static void discoverPrivateDirs() {
-        String base = "/data/data/" + PACKAGE_NAME;
-        discoverDirectory("files", new File(base + "/files"), DISCOVERY_MAX_DIR_ENTRIES);
-        discoverDirectory("log", new File(base + "/files/log"), DISCOVERY_MAX_DIR_ENTRIES);
-        discoverDirectory("shared_prefs", new File(base + "/shared_prefs"), DISCOVERY_MAX_DIR_ENTRIES);
-    }
-
-    private static void discoverDirectory(String label, File dir, int maxEntries) {
-        try {
-            if (!dir.exists() || !dir.isDirectory()) return;
-            ArrayDeque<File> queue = new ArrayDeque<>();
-            queue.add(dir);
-            int entries = 0;
-            while (!queue.isEmpty() && entries < maxEntries) {
-                File current = queue.poll();
-                File[] children = current.listFiles();
-                if (children == null) continue;
-                for (File child : children) {
-                    if (entries >= maxEntries) break;
-                    entries++;
-                    if (child.isDirectory()) {
-                        Log.i(TAG, "discover: " + label + ": " + child.getAbsolutePath() + " (dir)");
-                        queue.add(child);
-                    } else {
-                        Log.i(TAG, "discover: " + label + ": " + child.getAbsolutePath()
-                                + " (" + child.length() + " bytes)");
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to list " + label, t);
-        }
-    }
-
-    private static void discoverPrefsFiles() {
-        try {
-            File prefsDir = new File("/data/data/" + PACKAGE_NAME + "/shared_prefs");
-            if (!prefsDir.exists() || !prefsDir.isDirectory()) return;
-            File[] prefsFiles = prefsDir.listFiles((dir, name) -> name.endsWith(".xml"));
-            if (prefsFiles == null) return;
-            for (File prefsFile : prefsFiles) {
-                try {
-                    Log.i(TAG, "discover: prefs file: " + prefsFile.getName()
-                            + " (" + prefsFile.length() + " bytes)");
-                    discoverPrefsFileContent(prefsFile);
-                } catch (Throwable t) {
-                    Log.w(TAG, "discover: failed to inspect prefs file " + prefsFile.getName(), t);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to list shared_prefs", t);
-        }
-    }
-
-    private static void discoverPrefsFileContent(File prefsFile) {
-        int shown = 0;
-        try (BufferedReader reader = new BufferedReader(new FileReader(prefsFile))) {
-            String line;
-            long consumed = 0;
-            while (shown < DISCOVERY_MAX_PREFS_LINES && (line = reader.readLine()) != null) {
-                consumed += line.length() + 1;
-                if (consumed > DISCOVERY_MAX_BYTES) break;
-                if (line.toLowerCase().contains("k1")) {
-                    Log.i(TAG, "discover: prefs k1: " + maskDiscoveryLine(line));
-                    shown++;
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to read prefs file " + prefsFile.getName(), t);
-        }
-    }
-
-    private static void discoverDatabases() {
-        try {
-            File dbDir = new File("/data/data/" + PACKAGE_NAME + "/databases");
-            if (!dbDir.exists() || !dbDir.isDirectory()) return;
-            File[] dbFiles = dbDir.listFiles((dir, name) -> {
-                String lower = name.toLowerCase();
-                if (!lower.endsWith(".db")) return false;
-                if (lower.startsWith("google_app_measurement") || lower.contains("firebase")) return false;
-                if (lower.contains("cache")) return false;
-                if (lower.contains("freshchat") || lower.contains("firechat")) return false;
-                return true;
-            });
-            if (dbFiles == null || dbFiles.length == 0) return;
-            for (File dbFile : dbFiles) {
-                try {
-                    Log.i(TAG, "discover: db file: " + dbFile.getAbsolutePath()
-                            + " (" + dbFile.length() + " bytes)");
-                    discoverDatabaseContent(dbFile);
-                } catch (Throwable t) {
-                    Log.w(TAG, "discover: failed to inspect database " + dbFile.getName(), t);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to list databases", t);
-        }
-    }
-
-    private static void discoverDatabaseContent(File dbFile) {
-        SQLiteDatabase db = null;
-        boolean isNothingXDatabase = "nothing_x.db".equals(dbFile.getName());
-        try {
-            db = SQLiteDatabase.openDatabase(dbFile.getPath(), null, SQLiteDatabase.OPEN_READONLY);
-            List<String> tables = new ArrayList<>();
-            Cursor cursor = db.rawQuery(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", null);
-            try {
-                while (cursor.moveToNext() && tables.size() < DISCOVERY_MAX_TABLES) {
-                    tables.add(cursor.getString(0));
-                }
-            } finally {
-                cursor.close();
-            }
-
-            for (String table : tables) {
-                String quotedTable = table.replace("\"", "\"\"");
-                long rowCount = -1;
-                Cursor countCursor = null;
-                try {
-                    countCursor = db.rawQuery("SELECT COUNT(*) FROM \"" + quotedTable + "\"", null);
-                    if (countCursor.moveToFirst()) rowCount = countCursor.getLong(0);
-                } catch (Throwable t) {
-                    Log.w(TAG, "discover: failed to count rows in " + table, t);
-                } finally {
-                    if (countCursor != null) countCursor.close();
-                }
-                Log.i(TAG, "discover: table " + table + " rows=" + rowCount);
-                discoverDatabaseColumns(db, table, quotedTable);
-                if (isNothingXDatabase) {
-                    discoverDatabaseTableDetails(db, table, quotedTable, rowCount);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to scan database " + dbFile.getName(), t);
-        } finally {
-            if (db != null && db.isOpen()) db.close();
-        }
-    }
-
-    private static void discoverDatabaseColumns(SQLiteDatabase db, String table, String quotedTable) {
-        Cursor schemaCursor = null;
-        try {
-            schemaCursor = db.rawQuery("PRAGMA table_info(\"" + quotedTable + "\")", null);
-            List<String> columns = new ArrayList<>();
-            while (schemaCursor.moveToNext()) columns.add(schemaCursor.getString(1));
-            schemaCursor.close();
-            schemaCursor = null;
-            for (String column : columns) {
-                if (!SENSITIVE_COLUMN_PATTERN.matcher(column).find()) continue;
-                discoverDatabaseColumnValues(db, table, column);
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to inspect columns of table " + table, t);
-        } finally {
-            if (schemaCursor != null && !schemaCursor.isClosed()) schemaCursor.close();
-        }
-    }
-
-    private static void discoverDatabaseColumnValues(SQLiteDatabase db, String table, String column) {
-        Cursor cursor = null;
-        int shown = 0;
-        try {
-            cursor = db.query(table, new String[]{column}, null, null, null, null, null);
-            while (shown < DISCOVERY_MAX_COLUMN_SAMPLES && cursor.moveToNext()) {
-                String value = cursor.getString(0);
-                if (value == null) continue;
-                Log.i(TAG, "discover: column " + table + "." + column
-                        + " sample=" + maskDiscoveryValue(value) + " (len " + value.length() + ")");
-                shown++;
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to read column " + table + "." + column, t);
-        } finally {
-            if (cursor != null) cursor.close();
-        }
-    }
-
-    private static void discoverDatabaseTableDetails(SQLiteDatabase db, String table,
-            String quotedTable, long rowCount) {
-        Cursor schemaCursor = null;
-        List<String> columns = new ArrayList<>();
-        try {
-            schemaCursor = db.rawQuery("PRAGMA table_info(\"" + quotedTable + "\")", null);
-            while (schemaCursor.moveToNext()) columns.add(schemaCursor.getString(1));
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to read columns of table " + table, t);
-            return;
-        } finally {
-            if (schemaCursor != null && !schemaCursor.isClosed()) schemaCursor.close();
-        }
-
-        StringBuilder columnList = new StringBuilder();
-        for (String column : columns) {
-            if (columnList.length() > 0) columnList.append(", ");
-            columnList.append(column);
-        }
-        Log.i(TAG, "discover: table " + table + " columns=[" + columnList + "]");
-
-        boolean dumpRows = "NtBluetoothDeviceTable".equals(table)
-                || ("DeviceInfoTable".equals(table) && rowCount >= 0 && rowCount <= DISCOVERY_MAX_DB_ROWS);
-        if (!dumpRows || columns.isEmpty()) return;
-
-        Cursor cursor = null;
-        int row = 0;
-        try {
-            cursor = db.query(table, columns.toArray(new String[0]), null, null, null, null, null);
-            while (row < DISCOVERY_MAX_DB_ROWS && cursor.moveToNext()) {
-                row++;
-                for (int i = 0; i < columns.size(); i++) {
-                    String value = cursor.getString(i);
-                    if (value == null) continue;
-                    String line = "discover: row " + table + "." + columns.get(i)
-                            + "=" + maskDiscoveryValue(value) + " (len " + value.length() + ")";
-                    if (containsExactDiscoveryHexRun(value, 32)) line += " HEX32!";
-                    if (containsExactDiscoveryHexRun(value, 64)) line += " HEX64!";
-                    Log.i(TAG, line);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to read rows of table " + table, t);
-        } finally {
-            if (cursor != null) cursor.close();
-        }
-    }
-
-    private static void discoverDatastoreAndConfigFiles() {
-        try {
-            String filesPath = "/data/data/" + PACKAGE_NAME + "/files";
-            File filesDir = new File(filesPath);
-            if (!filesDir.exists() || !filesDir.isDirectory()) return;
-
-            List<File> targets = new ArrayList<>();
-            collectDiscoveryFiles(new File(filesDir, "datastore"), targets);
-            collectDiscoveryFiles(new File(filesDir, "aspen_config"), targets);
-
-            List<File> others = new ArrayList<>();
-            collectDiscoveryFiles(filesDir, others);
-            for (File file : others) {
-                if (targets.size() >= DISCOVERY_MAX_FILES) break;
-                String path = file.getAbsolutePath();
-                if (path.startsWith(filesPath + "/datastore/")
-                        || path.startsWith(filesPath + "/aspen_config/")) continue;
-                targets.add(file);
-            }
-
-            for (File file : targets) {
-                try {
-                    discoverFileHexRuns("files", file);
-                } catch (Throwable t) {
-                    Log.w(TAG, "discover: failed to scan hex runs in " + file.getAbsolutePath(), t);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to scan datastore and config files", t);
-        }
-    }
-
-    private static void collectDiscoveryFiles(File dir, List<File> files) {
-        if (dir == null || !dir.isDirectory()) return;
-        ArrayDeque<File> queue = new ArrayDeque<>();
-        queue.add(dir);
-        while (!queue.isEmpty() && files.size() < DISCOVERY_MAX_FILES) {
-            File current = queue.poll();
-            File[] children = current.listFiles();
-            if (children == null) continue;
-            for (File child : children) {
-                if (files.size() >= DISCOVERY_MAX_FILES) break;
-                if (child.isDirectory()) {
-                    queue.add(child);
-                } else if (child.isFile() && child.length() <= DISCOVERY_MAX_FILE_BYTES) {
-                    files.add(child);
-                }
-            }
-        }
-    }
-
-    private static void discoverPrefsHexRuns() {
-        try {
-            File prefsDir = new File("/data/data/" + PACKAGE_NAME + "/shared_prefs");
-            if (!prefsDir.exists() || !prefsDir.isDirectory()) return;
-            File[] prefsFiles = prefsDir.listFiles((dir, name) -> name.endsWith(".xml"));
-            if (prefsFiles == null) return;
-            int scanned = 0;
-            for (File prefsFile : prefsFiles) {
-                if (scanned >= DISCOVERY_MAX_FILES) break;
-                scanned++;
-                try {
-                    discoverFileHexRuns("prefs", prefsFile);
-                } catch (Throwable t) {
-                    Log.w(TAG, "discover: failed to scan hex runs in " + prefsFile.getName(), t);
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to scan prefs hex runs", t);
-        }
-    }
-
-    private static void discoverFileHexRuns(String label, File file) {
-        long size = file.length();
-        if (size <= 0 || size > DISCOVERY_MAX_FILE_BYTES) return;
-
-        String content = readDiscoveryText(file);
-        if (content == null) return;
-
-        Set<String> runs32 = new LinkedHashSet<>();
-        Set<String> runs64 = new LinkedHashSet<>();
-        if (!collectDiscoveryHexRuns(content, runs32, runs64)) return;
-
-        Log.i(TAG, "discover: " + label + " hex file: " + file.getAbsolutePath()
-                + " (" + size + " bytes)");
-        for (String run : runs32) {
-            Log.i(TAG, "discover: " + label + " hex32: " + maskDiscoveryValue(run)
-                    + " (len " + run.length() + ")");
-        }
-        for (String run : runs64) {
-            Log.i(TAG, "discover: " + label + " hex64: " + maskDiscoveryValue(run)
-                    + " (len " + run.length() + ")");
-        }
-    }
-
-    private static String readDiscoveryText(File file) {
-        byte[] bytes = readDiscoveryBytes(file);
-        if (bytes == null) return null;
-        try {
-            return new String(bytes, "ISO-8859-1");
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to decode " + file.getAbsolutePath(), t);
-            return null;
-        }
-    }
-
-    private static byte[] readDiscoveryBytes(File file) {
-        long size = file.length();
-        if (size <= 0 || size > DISCOVERY_MAX_FILE_BYTES) return null;
-        byte[] bytes = new byte[(int) size];
-        try (FileInputStream input = new FileInputStream(file)) {
-            int offset = 0;
-            int read;
-            while (offset < bytes.length && (read = input.read(bytes, offset, bytes.length - offset)) > 0) {
-                offset += read;
-            }
-            if (offset == bytes.length) return bytes;
-            byte[] partial = new byte[offset];
-            System.arraycopy(bytes, 0, partial, 0, offset);
-            return partial;
-        } catch (Throwable t) {
-            Log.w(TAG, "discover: failed to read file " + file.getAbsolutePath(), t);
-            return null;
-        }
-    }
-
-    private static boolean collectDiscoveryHexRuns(String content, Set<String> runs32, Set<String> runs64) {
-        boolean found = false;
-        Matcher matcher = HEX_RUN_32_PLUS_PATTERN.matcher(content);
-        while (matcher.find()) {
-            found = true;
-            String run = matcher.group();
-            if (run.length() == 32) {
-                if (runs32.size() < DISCOVERY_MAX_HEX_RUNS) runs32.add(run);
-            } else if (run.length() == 64) {
-                if (runs64.size() < DISCOVERY_MAX_HEX_RUNS) runs64.add(run);
-            }
-        }
-        return found;
-    }
-
-    private static boolean containsExactDiscoveryHexRun(String value, int length) {
-        Matcher matcher = HEX_RUN_32_PLUS_PATTERN.matcher(value);
-        while (matcher.find()) {
-            if (matcher.group().length() == length) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Reset the scan state (useful for testing or re-pairing).
-     */
-    public static void resetK1Logged() {
-        tokensFound.set(false);
-        dialogShown.set(false);
-    }
-
-    /**
-     * Reset the "don't show again" preference.
-     */
-    public static void resetDontShowPreference() {
-        if (appContext != null) {
-            SharedPreferences prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            prefs.edit().putBoolean(KEY_DONT_SHOW_DIALOG, false).apply();
-        }
-    }
 }
