@@ -7,8 +7,10 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.util.Log;
 
 /**
  * Keeps the app's process alive so the ride log sees the odometer while you ride.
@@ -23,25 +25,43 @@ import android.os.IBinder;
  */
 public final class RideService extends Service {
 
+    private static final String TAG = "RideService";
     private static final String CHANNEL = "morphe_ride";
     private static final int NOTIFICATION_ID = 0x52494445; // "RIDE"
 
     @Override
     public void onCreate() {
         super.onCreate();
-        startForeground(NOTIFICATION_ID, notification(this));
+        startForegroundCompat();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         // Start again on every call, so a restart after a kill leaves the notification in place.
-        startForeground(NOTIFICATION_ID, notification(this));
+        startForegroundCompat();
         return START_STICKY;
     }
 
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    /**
+     * Shows the ongoing notification. From Android 10 the service must name its foreground type;
+     * the manifest declares connectedDevice, so pass the matching constant.
+     */
+    private void startForegroundCompat() {
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(NOTIFICATION_ID, notification(this),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+            } else {
+                startForeground(NOTIFICATION_ID, notification(this));
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not start the ride service in the foreground.", t);
+        }
     }
 
     /** Starts the service when the user has turned it on. */
@@ -57,7 +77,8 @@ public final class RideService extends Service {
                 context.startService(intent);
             }
         } catch (Throwable t) {
-            // Nothing to do: rides are then recorded only while the app is running.
+            // Rides are then recorded only while the app is running.
+            Log.w(TAG, "Could not start the ride service.", t);
         }
     }
 

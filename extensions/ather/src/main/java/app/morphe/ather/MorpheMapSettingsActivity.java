@@ -1,12 +1,17 @@
 package app.morphe.ather;
 
+import android.content.Context;
+import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
@@ -134,7 +139,28 @@ public final class MorpheMapSettingsActivity extends MorpheScreen {
                 body.addView(kvRow(row[0], row[1]));
             }
         }
+
+        body.addView(actionRow("Battery optimization", new View.OnClickListener() {
+            @Override
+            public void onClick(View clicked) {
+                openBatteryOptimization();
+            }
+        }));
         page.addView(section("Vehicle", body, false));
+    }
+
+    /** Opens the system exemption list, or says the app is already exempt. */
+    private void openBatteryOptimization() {
+        PowerManager manager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (manager != null && manager.isIgnoringBatteryOptimizations(getPackageName())) {
+            toast("This app is already exempt from battery optimization.");
+            return;
+        }
+        try {
+            startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+        } catch (Throwable t) {
+            toast("Could not open the battery optimization settings.");
+        }
     }
 
     private void addRideLog(LinearLayout page) {
