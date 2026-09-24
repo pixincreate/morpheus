@@ -113,11 +113,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :patches:build --console=plain
+          ./gradlew :patches:buildAndroid --console=plain
           version="$(sed -n 's/^version *= *//p' gradle.properties)"
           mpp="patches/build/libs/patches-$version.mpp"
           if [ ! -f "$mpp" ]; then
             echo "::error::Expected patch bundle $mpp was not produced"
+            exit 1
+          fi
+          if ! jar tf "$mpp" | grep -q '^classes\.dex$'; then
+            echo "::error::$mpp has no classes.dex, so the Manager cannot load it. Build with :patches:buildAndroid."
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -143,3 +147,35 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refresh the bundle metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.bundle.outputs.version }}"
+          branch="${{ github.event.repository.default_branch }}"
+
+          git fetch origin "$branch"
+          git checkout -B "$branch" "origin/$branch"
+
+          branch_version="$(sed -n 's/^version *= *//p' gradle.properties)"
+          if [ "$branch_version" != "$version" ]; then
+            echo "::error::$branch carries version $branch_version, expected $version"
+            exit 1
+          fi
+
+          ./gradlew :patches:generatePatchesList --console=plain
+          bash scripts/generate-bundle-json.sh "$version" "$GITHUB_REPOSITORY"
+
+          git add patches-bundle.json patches-list.json
+          if git diff --cached --quiet; then
+            echo "Bundle metadata is already current for v$version"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: refresh the bundle metadata for v$version [skip ci]"
+          git push origin "$branch"
