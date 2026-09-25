@@ -141,7 +141,6 @@ jobs:
           name: "Morpheus ${{ github.ref_name }}"
           files: |
             patches/build/libs/patches-${{ steps.bundle.outputs.version }}.mpp
-            patches/build/libs/patches-${{ steps.bundle.outputs.version }}.mpp.sha256
           generate_release_notes: true
           draft: false
           prerelease: false
