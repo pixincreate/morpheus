@@ -12,10 +12,11 @@ import java.util.List;
  * Adds a "Morphe settings" section to the Ather app's account screen.
  *
  * The section is inserted directly above the server-driven "General settings"
- * section rather than inside it. The account list is built from Ather's CMS
- * payload, so its rows can be renamed, reordered or removed at any time; a
- * section of our own cannot collide with that churn, and it keeps patch
- * settings visibly separate from Ather's own.
+ * section, or appended at the end of the list when that anchor row is absent from
+ * the CMS payload. The account list is built from Ather's CMS payload, so its rows
+ * can be renamed, reordered or removed at any time; a section of our own cannot
+ * collide with that churn, and it keeps patch settings visibly separate from
+ * Ather's own.
  *
  * The account screen builds its sections in
  * {@code com.ather.account.model.AccountSectionMapperKt.createAccountSectionList}.
@@ -62,8 +63,12 @@ public final class MorpheAccount {
                 return null;
             }
             Object anchor = findAnchorItem(sections);
-            if (anchor == null) {
-                return sections;
+            // The anchor row comes from Ather's CMS, so it can disappear between
+            // releases or per account. Fall back to the first readable row for the
+            // icons and append our section at the end instead of giving up.
+            boolean anchored = anchor != null;
+            if (!anchored) {
+                anchor = findAnyItem(sections);
             }
             Object item = buildItem(anchor);
             if (item == null) {
@@ -73,7 +78,7 @@ public final class MorpheAccount {
             List<Object> out = new ArrayList<>(sections.size() + 1);
             boolean injected = false;
             for (Object section : sections) {
-                if (!injected && section != null && containsItem(section, anchor)) {
+                if (anchored && !injected && section != null && containsItem(section, anchor)) {
                     out.add(buildSection(SECTION_TITLE, item));
                     injected = true;
                 }
@@ -137,15 +142,16 @@ public final class MorpheAccount {
         constructor.setAccessible(true);
         // The constructor rejects null id/title/description/leadingIcon/trailingIcon,
         // subTitleColor, bannerTarget, banners and associatedOfferKeys, so the icon
-        // names are copied from the anchor row and the rest get empty values.
-        Method getLeadingIcon = anchor.getClass().getMethod("getLeadingIcon");
-        Method getTrailingIcon = anchor.getClass().getMethod("getTrailingIcon");
+        // names are copied from the anchor row (empty when there is none) and the rest
+        // get empty values.
+        String leadingIcon = anchor == null ? "" : iconOf(anchor, "getLeadingIcon");
+        String trailingIcon = anchor == null ? "" : iconOf(anchor, "getTrailingIcon");
         return constructor.newInstance(
                 ITEM_ID,
                 ITEM_TITLE,
                 ITEM_DESCRIPTION,
-                getLeadingIcon.invoke(anchor),
-                getTrailingIcon.invoke(anchor),
+                leadingIcon,
+                trailingIcon,
                 false,
                 "",
                 true,
@@ -158,6 +164,32 @@ public final class MorpheAccount {
                 null,
                 new ArrayList<Object>(),
                 null);
+    }
+
+    /** Returns the first readable item of the list, or null. */
+    private static Object findAnyItem(List<?> sections) {
+        for (Object section : sections) {
+            List<?> items = itemsOf(section);
+            if (items == null) {
+                continue;
+            }
+            for (Object item : items) {
+                if (item != null) {
+                    return item;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Reads an icon name from an item, or an empty string when it is unreadable. */
+    private static String iconOf(Object item, String getter) {
+        try {
+            Object value = item.getClass().getMethod(getter).invoke(item);
+            return value == null ? "" : (String) value;
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     /** Returns the first item whose id is {@link #ANCHOR_ID}, or null. */
