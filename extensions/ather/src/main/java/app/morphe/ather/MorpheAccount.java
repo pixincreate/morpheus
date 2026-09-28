@@ -8,6 +8,7 @@ package app.morphe.ather;
 import android.content.Context;
 import android.content.Intent;
 
+import android.util.Log;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -114,8 +115,18 @@ public final class MorpheAccount {
             }
             return null;
         }
-        if (url.startsWith("https://app.atherenergy.com/")
-                || url.startsWith("http://app.atherenergy.com/")) {
+        if (url.startsWith("morphe://web?")) {
+            String target = url.substring("morphe://web?".length());
+            Context context = MapPref.appContext();
+            if (context != null && !target.isEmpty()) {
+                Intent intent = new Intent(context, MorpheWebActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                intent.putExtra(MorpheWebActivity.EXTRA_URL, target);
+                context.startActivity(intent);
+            }
+            return null;
+        }
+        if (isWebLink(url)) {
             Context context = MapPref.appContext();
             if (context != null) {
                 Intent intent = new Intent(context, MorpheWebActivity.class);
@@ -126,6 +137,51 @@ public final class MorpheAccount {
             return null;
         }
         return url;
+    }
+
+    /**
+     * True for links that open a real web page. The app's own screens use the
+     * {@code https://app.atherenergy.com/app/...} deep links and must pass through
+     * to the app's navigation graph untouched.
+     */
+    private static boolean isWebLink(String url) {
+        if (url.startsWith("https://www.atherenergy.com/") || url.startsWith("http://www.atherenergy.com/")
+                || url.startsWith("https://shop.atherenergy.com/") || url.startsWith("http://shop.atherenergy.com/")) {
+            return true;
+        }
+        return url.startsWith("https://app.atherenergy.com/buyer-agreement")
+                || url.startsWith("https://app.atherenergy.com/login_to_discourse_via_token");
+    }
+
+    /**
+     * The app's own deep link for a stock row, keyed by the row id the server sends.
+     * These are the app's navigation-graph routes, so the app opens its own screen.
+     * Rows without a route (or web-only rows) return null and stay untouched.
+     */
+    private static String routeFor(String id) {
+        if (id == null) {
+            return null;
+        }
+        switch (id) {
+            case "subscription":
+                return "https://app.atherenergy.com/app/subscription";
+            case "warranty":
+                return "https://app.atherenergy.com/app/warranty";
+            case "voice_assistant":
+                return "https://app.atherenergy.com/app/explore-ather-voice";
+            case "labs":
+                return "https://app.atherenergy.com/app/ather-labs";
+            case "true_health":
+                return "https://app.atherenergy.com/app/ather-true-health";
+            case "manage_scooters":
+                return "https://app.atherenergy.com/app/manage-or-add-scooter";
+            case "purchase_terms":
+                return "morphe://web?" + "https://app.atherenergy.com/buyer-agreement";
+            case "privacy_policy":
+                return "morphe://web?" + "https://www.atherenergy.com/ather-app-privacy-policy";
+            default:
+                return null;
+        }
     }
 
     /**
@@ -146,17 +202,28 @@ public final class MorpheAccount {
                     continue;
                 }
                 try {
-                    String target = destinationFor(item);
-                    if (target == null) {
-                        continue;
+                    String id = stringOf(item, "getId");
+                    String deep = stringOf(item, "getDeepLinkUrl");
+                    String redirect = stringOf(item, "getRedirectUrl");
+                    Log.i("MorpheAccount", "row title=" + invokeGetter(item, "getTitle")
+                        + " id=" + id
+                        + " deep=[" + deep + "] redirect=[" + redirect + "]");
+                    if (isBlank(deep)) {
+                        String target = !isBlank(redirect) ? redirect : routeFor(id);
+                        if (isBlank(target)) {
+                            continue;
+                        }
+                        Field field = findField(item.getClass(), "deepLinkUrl");
+                        if (field != null) {
+                            field.setAccessible(true);
+                            field.set(item, target);
+                            Log.i("MorpheAccount", "filled deep link -> " + target);
+                        } else {
+                            Log.i("MorpheAccount", "no deepLinkUrl field");
+                        }
                     }
-                    Field field = findField(item.getClass(), "id");
-                    if (field != null) {
-                        field.setAccessible(true);
-                        field.set(item, target);
-                    }
-                } catch (Throwable ignored) {
-                    // A row we cannot repair must keep working through its own link.
+                } catch (Throwable t) {
+                    Log.i("MorpheAccount", "row repair failed: " + t);
                 }
             }
         }
@@ -230,6 +297,19 @@ public final class MorpheAccount {
             }
         }
         return null;
+    }
+
+    private static String stringOf(Object item, String getter) {
+        try {
+            Object value = invokeGetter(item, getter);
+            return value instanceof String ? (String) value : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private static boolean isKnownDestination(String upper) {
